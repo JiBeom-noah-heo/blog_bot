@@ -17,11 +17,15 @@ def _find_claude_cmd() -> str:
 
 
 def call_claude(prompt: str, timeout: int = 180) -> str:
-    """claude CLI(--print)에 프롬프트를 넣고 응답 텍스트를 돌려준다. 구독 인증을 쓰도록 API 키는 뺀다."""
+    """claude CLI(--print)에 프롬프트를 넣고 응답 텍스트를 돌려준다. 구독 인증을 쓰도록 API 키는 뺀다.
+
+    도구를 모두 끈다: 생성용 호출이 전역 CLAUDE.md의 '경험 기록' 규칙을 보고 _inbox에 쓰는 일을 막는다.
+    """
     env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
+    env["LEAVE_LAB_BOT"] = "1"
 
     result = subprocess.run(
-        [_find_claude_cmd(), "--print"],
+        [_find_claude_cmd(), "--print", "--tools", "", "--no-session-persistence"],
         input=prompt,
         capture_output=True,
         text=True,
