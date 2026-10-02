@@ -68,12 +68,13 @@ def draft() -> None:
     def drafted(n):
         return _load_meta(OUTPUT_DIR / n.path.stem / "meta.json").get("stage") in ("drafted", "published")
 
-    fresh = [n for n in notes if not n.meta.get("source") and not drafted(n)]
+    pending = _pending(repo)
+    fresh = [n for n in notes if _order(n, pending) is None and not drafted(n)]
     backlog = sorted(
-        (n for n in notes if n.meta.get("source") and not drafted(n)),
-        key=lambda n: n.meta["source"].get("order", 0),
+        (n for n in notes if _order(n, pending) is not None and not drafted(n)),
+        key=lambda n: _order(n, pending),
     )
-    need = max(0, BACKLOG_BUFFER - _ready_count())
+    need = max(0, BACKLOG_BUFFER - _ready_count(repo))
     targets = fresh + backlog[:need]
     if backlog:
         print(f"[LeaveLab] 원고 글감 {len(backlog)}개 대기, 이번에 초안 {min(need, len(backlog))}개")
@@ -92,7 +93,7 @@ def draft() -> None:
 
         workdir.mkdir(parents=True, exist_ok=True)
         meta.update({"note": str(note.path), "slug": note.slug, "series": note.series, "files": {},
-                     "backlog_order": (note.meta.get("source") or {}).get("order")})
+                     "backlog_order": _order(note, pending)})
         try:
             for lang in note.langs:
                 print(f"[LeaveLab] 초안 생성 중 ({lang}): {note.path.name}")
@@ -245,14 +246,57 @@ def auto() -> None:
     )
 
 
-def _ready_count() -> int:
-    """발행 대기 중인(보류 아닌) 초안 수."""
+def _pending(repo: Path) -> list[tuple[str, float, Path]]:
+    """아직 발행 안 된(raw·hold) 원고 글감: (프로젝트, 순서, 경로)."""
+    out = []
+    for p in (repo / "_inbox").glob("*.md"):
+        try:
+            n = inbox.parse(p)
+        except Exception:
+            continue
+        src = n.meta.get("source")
+        if src and n.meta.get("status") in ("raw", "hold"):
+            out.append((str(n.meta.get("project", "")), float(src.get("order", 0)), p))
+    return out
+
+
+def _order(note: inbox.Note, pending) -> float | None:
+    """발행 순서. 원고 글감은 source.order, 대기 중인 원고 글감이 있는 프로젝트의 새 메모는 그 뒤."""
+    src = note.meta.get("source")
+    if src:
+        return float(src.get("order", 0))
+    project = str(note.meta.get("project", ""))
+    same = [o for proj, o, _ in pending if proj == project]
+    return max(same) + 0.01 if same else None
+
+
+def _blocked_by(note: inbox.Note, pending) -> Path | None:
+    """같은 프로젝트에서 앞 순서 글감이 아직 발행 전이면 그 경로."""
+    order = _order(note, pending)
+    if order is None:
+        return None
+    project = str(note.meta.get("project", ""))
+    earlier = [(o, p) for proj, o, p in pending if proj == project and o < order and p != note.path]
+    return min(earlier)[1] if earlier else None
+
+
+def _ready_count(repo: Path) -> int:
+    """지금 순서상 발행할 수 있는(보류·순서 대기 아닌) 초안 수."""
     if not OUTPUT_DIR.exists():
         return 0
-    return sum(
-        1 for p in OUTPUT_DIR.glob("*/meta.json")
-        if (m := _load_meta(p)).get("stage") == "drafted" and not m.get("hold")
-    )
+    pending = _pending(repo)
+    count = 0
+    for p in OUTPUT_DIR.glob("*/meta.json"):
+        m = _load_meta(p)
+        if m.get("stage") != "drafted" or m.get("hold"):
+            continue
+        try:
+            if _blocked_by(inbox.parse(Path(m["note"])), pending):
+                continue
+        except Exception:
+            continue
+        count += 1
+    return count
 
 
 def hold(name: str, on: bool = True) -> None:
@@ -303,6 +347,10 @@ def publish(min_age_hours: float = 0, limit: int | None = None) -> None:
             continue
 
         note_path = Path(meta["note"])
+        before = _blocked_by(inbox.parse(note_path), _pending(repo))
+        if before:
+            print(f"[LeaveLab] 순서 대기 (앞 글감 {before.name} 먼저): {workdir.name}")
+            continue
         note_text = note_path.read_text(encoding="utf-8")
         posts, blocked = {}, {}
         for lang, fname in meta["files"].items():
