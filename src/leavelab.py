@@ -34,6 +34,7 @@ SECTIONS = {
     "th": ["คำถาม", "จุดที่ติด", "สิ่งที่ตรวจสอบ", "ผลการตัดสิน", "ขั้นต่อไป"],
 }
 MAX_REVISIONS = 2
+BACKLOG_BUFFER = 2  # 원고 글감은 발행 대기 초안이 이만큼 되도록만 미리 만든다
 FRONTMATTER = re.compile(r"\A---\s*\n(.*?)\n---\s*\n?(.*)\Z", re.DOTALL)
 
 
@@ -62,13 +63,25 @@ def draft() -> None:
         print("[LeaveLab] 새 글감(status: raw) 없음")
         return
 
-    for note in notes:
+    # 작업 세션 메모는 전부 초안으로 만든다. 원고에서 가져온 메모(source 있음)는 순서대로,
+    # 발행 대기 초안이 BACKLOG_BUFFER개가 되도록만 채운다.
+    def drafted(n):
+        return _load_meta(OUTPUT_DIR / n.path.stem / "meta.json").get("stage") in ("drafted", "published")
+
+    fresh = [n for n in notes if not n.meta.get("source") and not drafted(n)]
+    backlog = sorted(
+        (n for n in notes if n.meta.get("source") and not drafted(n)),
+        key=lambda n: n.meta["source"].get("order", 0),
+    )
+    need = max(0, BACKLOG_BUFFER - _ready_count())
+    targets = fresh + backlog[:need]
+    if backlog:
+        print(f"[LeaveLab] 원고 글감 {len(backlog)}개 대기, 이번에 초안 {min(need, len(backlog))}개")
+
+    for note in targets:
         workdir = OUTPUT_DIR / note.path.stem
         meta_path = workdir / "meta.json"
         meta = _load_meta(meta_path)
-        if meta.get("stage") in ("drafted", "published"):
-            print(f"[LeaveLab] 이미 초안 있음: {workdir}")
-            continue
 
         issues = inbox.validate(note)
         if issues:
@@ -78,7 +91,8 @@ def draft() -> None:
             continue
 
         workdir.mkdir(parents=True, exist_ok=True)
-        meta.update({"note": str(note.path), "slug": note.slug, "series": note.series, "files": {}})
+        meta.update({"note": str(note.path), "slug": note.slug, "series": note.series, "files": {},
+                     "backlog_order": (note.meta.get("source") or {}).get("order")})
         try:
             for lang in note.langs:
                 print(f"[LeaveLab] 초안 생성 중 ({lang}): {note.path.name}")
@@ -225,7 +239,20 @@ def fact_check(note_text: str, fm: dict, body: str) -> list[str]:
 
 def auto() -> None:
     draft()
-    publish(min_age_hours=float(os.getenv("LEAVE_LAB_REVIEW_HOURS", "24")))
+    publish(
+        min_age_hours=float(os.getenv("LEAVE_LAB_REVIEW_HOURS", "24")),
+        limit=int(os.getenv("LEAVE_LAB_MAX_PUBLISH_PER_RUN", "1")),
+    )
+
+
+def _ready_count() -> int:
+    """발행 대기 중인(보류 아닌) 초안 수."""
+    if not OUTPUT_DIR.exists():
+        return 0
+    return sum(
+        1 for p in OUTPUT_DIR.glob("*/meta.json")
+        if (m := _load_meta(p)).get("stage") == "drafted" and not m.get("hold")
+    )
 
 
 def hold(name: str, on: bool = True) -> None:
@@ -243,12 +270,26 @@ def _age_hours(meta: dict) -> float:
     return (datetime.now() - datetime.fromisoformat(at)).total_seconds() / 3600 if at else 0.0
 
 
-def publish(min_age_hours: float = 0) -> None:
+def _queue_key(workdir: Path):
+    """작업 세션 메모가 먼저, 원고 글감은 원고 순서대로, 같으면 먼저 만든 초안부터."""
+    m = _load_meta(workdir / "meta.json")
+    order = m.get("backlog_order")
+    return (order is not None, order or 0, m.get("drafted_at") or "")
+
+
+def publish(min_age_hours: float = 0, limit: int | None = None) -> None:
     repo = _repo()
     site = _static_site(repo)
-    workdirs = sorted(p for p in OUTPUT_DIR.glob("*") if (p / "meta.json").exists()) if OUTPUT_DIR.exists() else []
+    workdirs = sorted(
+        (p for p in OUTPUT_DIR.glob("*") if (p / "meta.json").exists()) if OUTPUT_DIR.exists() else [],
+        key=_queue_key,
+    )
+    done = 0
 
     for workdir in workdirs:
+        if limit is not None and done >= limit:
+            print(f"[LeaveLab] 오늘 발행 상한({limit}편) 도달, 나머지는 다음 실행에")
+            break
         meta_path = workdir / "meta.json"
         meta = _load_meta(meta_path)
         if meta.get("stage") != "drafted":
@@ -326,6 +367,7 @@ def publish(min_age_hours: float = 0) -> None:
             continue
 
         inbox.mark_used(inbox.parse(note_path), list(published.values()))
+        done += 1
         meta["stage"] = "published"
         meta.pop("last_error", None)
         _save_meta(meta_path, meta)
