@@ -352,36 +352,28 @@ def publish(min_age_hours: float = 0, limit: int | None = None) -> None:
             print(f"[LeaveLab] 순서 대기 (앞 글감 {before.name} 먼저): {workdir.name}")
             continue
         note_text = note_path.read_text(encoding="utf-8")
-        posts, blocked = {}, {}
-        for lang, fname in meta["files"].items():
-            fm, body = _read_draft(workdir / fname)
-            issues = quality_gate(fm, body)
-            if not issues:
-                print(f"[LeaveLab] 사실 검증 중 ({lang}): {workdir.name}")
-                issues = fact_check(note_text, fm, body)
-            if issues:
-                blocked[lang] = issues
-                print(f"[LeaveLab] 발행 보류 {workdir.name}/{fname}:")
-                for i in issues:
-                    print(f"  - {i}")
-            posts[lang] = (fm, body)
-        if blocked:
-            # 지적대로 자동으로 고쳐 쓰고 검토 시간을 다시 시작한다. MAX_REVISIONS를 넘기면 사람 몫으로 남긴다.
-            if meta.get("revisions", 0) < MAX_REVISIONS:
-                for lang, issues in blocked.items():
-                    fm, body = posts[lang]
-                    out = {"title": fm.get("title", ""), "description": fm.get("description", ""),
-                           "tags": [str(t) for t in fm.get("tags") or []], "content": body}
-                    out = _revise(note_text, out, issues)
-                    fm.update(title=out["title"], description=out["description"])
-                    (workdir / meta["files"][lang]).write_text(_render(fm, out["content"]), encoding="utf-8")
-                meta["revisions"] = meta.get("revisions", 0) + 1
-                meta["drafted_at"] = datetime.now().isoformat(timespec="seconds")
-                meta["last_error"] = f"검증 미통과 → 자동 수정 {meta['revisions']}회차. 검토 시간 후 다시 검증"
-                print(f"[LeaveLab] 자동 수정함 ({meta['revisions']}/{MAX_REVISIONS}): {workdir.name}")
-            else:
+        # 걸리면 지적대로 고쳐 쓰고 같은 실행 안에서 바로 다시 검증한다(검토 시간을 다시 세지 않는다).
+        # MAX_REVISIONS를 넘기면 사람 몫으로 남긴다.
+        while True:
+            posts, blocked = _check(workdir, meta, note_text)
+            if not blocked:
+                break
+            if meta.get("revisions", 0) >= MAX_REVISIONS:
                 meta["last_error"] = "자동 수정 한도 초과 — 초안을 직접 고친 뒤 publish"
+                _save_meta(meta_path, meta)
+                break
+            for lang, issues in blocked.items():
+                fm, body = posts[lang]
+                out = {"title": fm.get("title", ""), "description": fm.get("description", ""),
+                       "tags": [str(t) for t in fm.get("tags") or []], "content": body}
+                out = _revise(note_text, out, issues)
+                fm.update(title=out["title"], description=out["description"])
+                (workdir / meta["files"][lang]).write_text(_render(fm, out["content"]), encoding="utf-8")
+            meta["revisions"] = meta.get("revisions", 0) + 1
+            meta["last_error"] = f"검증 미통과 → 자동 수정 {meta['revisions']}회차"
             _save_meta(meta_path, meta)
+            print(f"[LeaveLab] 자동 수정함 ({meta['revisions']}/{MAX_REVISIONS}), 다시 검증: {workdir.name}")
+        if blocked:
             continue
 
         # ko·th는 같은 날짜·slug로 발행해 파일명이 같게 유지한다
@@ -419,6 +411,24 @@ def publish(min_age_hours: float = 0, limit: int | None = None) -> None:
         meta["stage"] = "published"
         meta.pop("last_error", None)
         _save_meta(meta_path, meta)
+
+
+def _check(workdir: Path, meta: dict, note_text: str) -> tuple[dict, dict]:
+    """언어별 초안을 품질 게이트·사실 검증에 통과시킨다. (posts, blocked) 반환."""
+    posts, blocked = {}, {}
+    for lang, fname in meta["files"].items():
+        fm, body = _read_draft(workdir / fname)
+        issues = quality_gate(fm, body)
+        if not issues:
+            print(f"[LeaveLab] 사실 검증 중 ({lang}): {workdir.name}")
+            issues = fact_check(note_text, fm, body)
+        if issues:
+            blocked[lang] = issues
+            print(f"[LeaveLab] 발행 보류 {workdir.name}/{fname}:")
+            for i in issues:
+                print(f"  - {i}")
+        posts[lang] = (fm, body)
+    return posts, blocked
 
 
 def _read_draft(path: Path) -> tuple[dict, str]:
