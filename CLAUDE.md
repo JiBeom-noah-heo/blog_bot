@@ -12,7 +12,7 @@ python main.py hold <메모이름>   # auto 발행에서 제외 (unhold로 해�
 ```
 - 예약 실행: Windows 작업 스케줄러 `leave-lab blog_bot`이 매일 09:00에 `run_auto.cmd`를 돌린다(로그인 상태에서만 실행). 메모 → 그날 초안 → 다음 날 발행. 로그는 `output/logs/YYYY-MM-DD.log`.
 - 발행 순서: 하루 `LEAVE_LAB_MAX_PUBLISH_PER_RUN`(기본 1)편. 원고 글감(frontmatter `source.order`)은 순서대로 나가고, 같은 `project`에 앞 순서 글감(raw·hold)이 남아 있으면 뒤 글은 초안이 있어도 기다린다. 그 프로젝트 세션이 새로 남긴 메모도 대기 중인 원고 글감 뒤에 선다. 원고 초안은 발행 가능한 초안이 2편이 되도록만 미리 만든다.
-- 안전장치 3단계: 검토 시간(`LEAVE_LAB_REVIEW_HOURS`, 기본 24h) → 품질 게이트(형식) → 사실 검증(`prompts/leavelab_review.md`, 메모와 대조). 걸리면 지적대로 자동 수정하고 같은 실행에서 바로 다시 검증한다(최대 2회, 검토 시간은 다시 세지 않음). 한도를 넘기면 발행하지 않고 `status`에 오류로 남기며, 같은 프로젝트의 뒤 글도 멈춘다.
+- 안전장치 3단계: 검토 시간(`LEAVE_LAB_REVIEW_HOURS`, 기본 24h) → 품질 게이트(형식·완결성) → 사실 검증(`prompts/leavelab_review.md`, 메모와 대조, **연속 2회 통과** 필요). 걸리면 지적대로 자동 수정하고 같은 실행에서 바로 다시 검증한다(최대 2회, 검토 시간은 다시 세지 않음). 한도를 넘기면 발행하지 않고 `status`에 오류로 남기며, 같은 프로젝트의 뒤 글도 멈춘다.
 - 검토 시간을 0으로 줄이거나 사실 검증을 빼지 않는다(구글 대량 생성 콘텐츠 정책 리스크). 바꾸려면 사용자에게 먼저 묻는다.
 - 발행은 leave-lab 저장소의 `blog_bot/publishers/static_site.py`를 불러 쓴다. 발행 규칙은 거기서만 고친다.
 - 글 생성·검증은 `claude --print --tools ""`(구독 인증, 도구 없음)로 한다. API 키를 쓰지 않는다.

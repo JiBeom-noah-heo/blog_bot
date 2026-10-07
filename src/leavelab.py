@@ -297,6 +297,19 @@ def fact_check(note_text: str, fm: dict, body: str) -> list[str]:
     return issues or [f"사실 검증 응답 해석 불가: {out[:200]}"]
 
 
+FACT_CHECK_PASSES = 2  # 발행 전 사실 검증은 연속으로 이만큼 통과해야 한다(AI 검증의 실행마다 편차 대비)
+
+
+def fact_check_twice(note_text: str, fm: dict, body: str, label: str = "") -> list[str]:
+    """사실 검증을 FACT_CHECK_PASSES번 연속으로 돌린다. 한 번이라도 지적이 나오면 그 지적을 돌려준다."""
+    for i in range(FACT_CHECK_PASSES):
+        print(f"[LeaveLab] 사실 검증 {i + 1}/{FACT_CHECK_PASSES}: {label}")
+        issues = fact_check(note_text, fm, body)
+        if issues:
+            return issues
+    return []
+
+
 def auto() -> None:
     draft()
     publish(
@@ -479,8 +492,7 @@ def _check(workdir: Path, meta: dict, note_text: str) -> tuple[dict, dict]:
         fm, body = _read_draft(workdir / fname)
         issues = quality_gate(fm, body)
         if not issues:
-            print(f"[LeaveLab] 사실 검증 중 ({lang}): {workdir.name}")
-            issues = fact_check(note_text, fm, body)
+            issues = fact_check_twice(note_text, fm, body, f"{workdir.name} ({lang})")
         if issues:
             blocked[lang] = issues
             print(f"[LeaveLab] 발행 보류 {workdir.name}/{fname}:")
