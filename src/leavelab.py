@@ -222,6 +222,65 @@ def quality_gate(fm: dict, body: str) -> list[str]:
     for s in fm.get("sources") or []:
         if not str(s.get("url", "")).startswith(("http://", "https://")):
             issues.append(f"출처 URL 형식 오류: {s.get('url')!r}")
+    issues += completeness_issues(body)
+    return issues
+
+
+SUMMARY_PARTS = ("**측정한 것**", "**확실한 것**", "**아직 모르는 것**")
+SENTENCE_END = tuple('.!?:)"”’」』`*…')
+
+
+def completeness_issues(body: str) -> list[str]:
+    """출력 형식이 깨진 초안을 잡는다: 잘린 표, 빠진 섹션, 끊긴 문장, 짝 안 맞는 괄호·마크다운."""
+    issues = []
+    if not re.search(r"^##\s*(다음 행동|ขั้นต่อไป)", body, re.MULTILINE):
+        issues.append("필수 섹션 누락: ## 다음 행동")
+    m = re.search(r"^##\s*(정리|สรุป)\s*$(.*)", body, re.MULTILINE | re.DOTALL)
+    if not m:
+        issues.append("필수 섹션 누락: ## 정리")
+    elif body.count("## ") and m.group(1) == "정리":
+        for part in SUMMARY_PARTS:
+            if part not in m.group(2):
+                issues.append(f"정리 블록에 {part} 없음")
+
+    lines, in_code = body.splitlines(), False
+    table: list[str] = []
+
+    def check_table(rows: list[str]) -> None:
+        if len(rows) < 2 or not re.match(r"^\|\s*:?-{3,}", rows[1].strip()):
+            issues.append(f"표 머리글·구분선이 깨짐: {rows[0][:40]}")
+            return
+        widths = {r.strip().strip("|").count("|") for r in rows}
+        if len(widths) > 1:
+            issues.append(f"표의 열 개수가 행마다 다름: {rows[0][:40]}")
+
+    for line in lines + [""]:
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            in_code = not in_code
+            continue
+        if in_code:
+            continue
+        if stripped.startswith("|"):
+            table.append(stripped)
+            continue
+        if table:
+            check_table(table)
+            table = []
+        if not stripped or stripped.startswith(("#", "-", "*", ">", "※")) or re.match(r"^\d+\.", stripped):
+            continue
+        if not stripped.endswith(SENTENCE_END) and not stripped.endswith(("다", "요")):
+            issues.append(f"문장이 끝나지 않음: …{stripped[-30:]}")
+    if in_code:
+        issues.append("코드 블록(```)이 닫히지 않음")
+    text = re.sub(r"```.*?```", "", body, flags=re.DOTALL)
+    if text.count("`") % 2:
+        issues.append("인라인 코드(`) 짝이 맞지 않음")
+    if text.count("**") % 2:
+        issues.append("굵게(**) 짝이 맞지 않음")
+    for o, c in ("()", "[]", "（）"):
+        if text.count(o) != text.count(c):
+            issues.append(f"괄호 {o} 짝이 맞지 않음")
     return issues
 
 
