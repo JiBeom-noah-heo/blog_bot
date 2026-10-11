@@ -128,19 +128,41 @@ def _prompt(note: inbox.Note, lang: str) -> str:
     )
 
 
+# 홈 탭 분류. leave-lab src/ui.ts의 CATEGORY_HINTS와 같은 낱말표를 쓴다(앞 항목 우선). 못 찾으면 비워 두고 사이트가 추정한다.
+CATEGORY_HINTS = [
+    ("육아", ["육아", "휴직", "아이", "돌봄", "어린이집"]),
+    ("수익", ["위탁판매", "매출", "수익", "결산", "판매", "쇼피", "스마트스토어", "광고", "수수료", "애드센스", "도매", "가격", "주문", "전자책", "강의"]),
+    ("자동화", ["자동화", "봇", "파이프라인", "예약", "스크립트", "크롤링", "스케줄"]),
+    ("개발", ["개발", "api", "코드", "계산기", "배포", "빌드", "버그", "정적사이트", "클로드코드", "디자인", "앱"]),
+]
+CARD_FIELDS = ("hypothesis", "method", "result")  # 글 상단 EXPERIMENT CARD. 생성 응답의 HYPOTHESIS/METHOD/RESULT 줄
+
+
+def _category(note: inbox.Note, title: str = "") -> str | None:
+    hay = " ".join([*note.tags, title, note.kind]).lower()
+    for cat, words in CATEGORY_HINTS:
+        if any(w in hay for w in words):
+            return cat
+    return None
+
+
 def _frontmatter(note: inbox.Note, lang: str, out: dict) -> dict:
-    return {
+    fm = {
         "title": out["title"],
         "description": out["description"],
         "date": date.today(),
         "lang": lang,
         "series": note.series,
         "verdict": note.verdict,
+        "category": _category(note, out["title"]),
         # 메모 태그는 한국어라 th 글에는 생성된 태그를 쓴다
         "tags": (note.tags if lang == "ko" else []) or out["tags"],
         "sources": note.sources,
-        "draft": False,
     }
+    for k in CARD_FIELDS:
+        fm[k] = (out.get(k) or "").strip() or None
+    fm["draft"] = False
+    return fm
 
 
 def _self_review(note: inbox.Note, lang: str, out: dict) -> dict:
@@ -165,10 +187,17 @@ def _revise(note_text: str, out: dict, issues: list[str]) -> dict:
         .replace("{{TITLE}}", out["title"])
         .replace("{{DESCRIPTION}}", out["description"])
         .replace("{{TAGS}}", ", ".join(out["tags"]))
+        .replace("{{HYPOTHESIS}}", out.get("hypothesis", ""))
+        .replace("{{METHOD}}", out.get("method", ""))
+        .replace("{{RESULT}}", out.get("result", ""))
         .replace("{{CONTENT}}", out["content"])
     )
     revised = _parse_response(call_claude(prompt, timeout=300))
-    return revised if revised["content"] else out
+    if not revised["content"]:
+        return out
+    for k in CARD_FIELDS:  # 고쳐 쓴 응답이 카드 줄을 빠뜨리면 원래 값을 유지한다
+        revised[k] = revised.get(k) or out.get(k, "")
+    return revised
 
 
 def _parse_response(text: str) -> dict:
@@ -181,6 +210,9 @@ def _parse_response(text: str) -> dict:
         "title": line("TITLE"),
         "description": line("DESCRIPTION"),
         "tags": [t.strip() for t in line("TAGS").split(",") if t.strip()],
+        "hypothesis": line("HYPOTHESIS"),
+        "method": line("METHOD"),
+        "result": line("RESULT"),
         "content": content.group(1).strip() if content else "",
     }
 
@@ -207,6 +239,10 @@ def quality_gate(fm: dict, body: str) -> list[str]:
         issues.append("치환 안 된 마커나 메모용 '추측:' 표기가 남아 있음")
     if re.search(r"^#\s", body, re.MULTILINE):
         issues.append("본문에 H1이 있음 (제목은 레이아웃이 출력)")
+    for k in CARD_FIELDS:
+        v = fm.get(k)
+        if v and len(str(v)) > 160:
+            issues.append(f"실험 카드 {k}가 너무 김 ({len(str(v))}자, 한 문장 60자 안팎)")
     if series == "검증일지":
         if fm.get("verdict") not in inbox.VERDICTS:
             issues.append("검증일지에 verdict 없음")
@@ -289,7 +325,9 @@ def completeness_issues(body: str) -> list[str]:
 def fact_check(note_text: str, fm: dict, body: str) -> list[str]:
     """초안을 원본 메모와 대조한다. 메모에 없는 사실·숫자·출처, 민감정보, 고유명사를 잡는다."""
     template = (PROJECT_ROOT / "prompts" / "leavelab_review.md").read_text(encoding="utf-8")
-    draft_text = f"제목: {fm.get('title')}\n설명: {fm.get('description')}\n\n{body}"
+    card = "".join(f"{label}: {fm[k]}\n" for k, label in
+                   (("hypothesis", "가설"), ("method", "방법"), ("result", "결과")) if fm.get(k))
+    draft_text = f"제목: {fm.get('title')}\n설명: {fm.get('description')}\n{card}\n{body}"
     out = call_claude(template.replace("{{NOTE}}", note_text).replace("{{DRAFT}}", draft_text), timeout=300).strip()
     if out.splitlines() and out.splitlines()[0].strip().upper() == "OK":
         return []
@@ -437,9 +475,11 @@ def publish(min_age_hours: float = 0, limit: int | None = None) -> None:
             for lang, issues in blocked.items():
                 fm, body = posts[lang]
                 out = {"title": fm.get("title", ""), "description": fm.get("description", ""),
-                       "tags": [str(t) for t in fm.get("tags") or []], "content": body}
+                       "tags": [str(t) for t in fm.get("tags") or []], "content": body,
+                       **{k: str(fm.get(k) or "") for k in CARD_FIELDS}}
                 out = _revise(note_text, out, issues)
-                fm.update(title=out["title"], description=out["description"])
+                fm.update(title=out["title"], description=out["description"],
+                          **{k: (out.get(k) or "").strip() or None for k in CARD_FIELDS})
                 (workdir / meta["files"][lang]).write_text(_render(fm, out["content"]), encoding="utf-8")
             meta["revisions"] = meta.get("revisions", 0) + 1
             meta["last_error"] = f"검증 미통과 → 자동 수정 {meta['revisions']}회차"
@@ -467,6 +507,10 @@ def publish(min_age_hours: float = 0, limit: int | None = None) -> None:
                     verdict=fm.get("verdict"),
                     slug=meta["slug"],
                     draft=bool(fm.get("draft", False)),
+                    category=fm.get("category"),
+                    hypothesis=fm.get("hypothesis"),
+                    method=fm.get("method"),
+                    result=fm.get("result"),
                 )
                 path = site.publish(post)
                 published[lang] = path.relative_to(repo).as_posix()
