@@ -427,10 +427,18 @@ def _age_hours(meta: dict) -> float:
 
 
 def _queue_key(workdir: Path):
-    """작업 세션 메모가 먼저(메모 날짜순), 원고 글감은 원고 순서대로, 같으면 먼저 만든 초안부터."""
+    """작업 세션 메모가 먼저(최근 메모부터. 그때그때의 기록이 묵은 기록보다 먼저 나간다),
+    원고 글감은 원고 순서대로, 같으면 먼저 만든 초안부터."""
     m = _load_meta(workdir / "meta.json")
     order = m.get("backlog_order")
-    return (order is not None, order or 0, Path(m.get("note") or "").name, m.get("drafted_at") or "")
+    name = Path(m.get("note") or "").name
+    if order is None:
+        try:
+            recent = -datetime.strptime(name[:10], "%Y-%m-%d").toordinal()
+        except ValueError:
+            recent = 0
+        return (False, recent, name, m.get("drafted_at") or "")
+    return (True, order, name, m.get("drafted_at") or "")
 
 
 def publish(min_age_hours: float = 0, limit: int | None = None) -> None:
