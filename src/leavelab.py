@@ -34,7 +34,9 @@ SECTIONS = {
     "th": ["คำถาม", "จุดที่ติด", "สิ่งที่ตรวจสอบ", "ผลการตัดสิน", "ขั้นต่อไป"],
 }
 MAX_REVISIONS = 2
-BACKLOG_BUFFER = 2  # 원고 글감은 발행 대기 초안이 이만큼 되도록만 미리 만든다
+# 원고 글감은 발행 대기 초안이 이만큼 되도록만 미리 만든다. 새 초안은 24시간 검토 뒤에야 나가므로
+# 하루 발행 편수의 2배는 있어야 매일 그 편수가 끊기지 않는다.
+BACKLOG_BUFFER = 2 * int(os.getenv("LEAVE_LAB_MAX_PUBLISH_PER_RUN", "1"))
 FRONTMATTER = re.compile(r"\A---\s*\n(.*?)\n---\s*\n?(.*)\Z", re.DOTALL)
 
 
