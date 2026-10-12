@@ -155,6 +155,7 @@ def _frontmatter(note: inbox.Note, lang: str, out: dict) -> dict:
         "series": note.series,
         "verdict": note.verdict,
         "category": _category(note, out["title"]),
+        "project": str(note.meta.get("project") or "").strip() or None,  # 사이트가 연재(시리즈)로 묶는 기준
         # 메모 태그는 한국어라 th 글에는 생성된 태그를 쓴다
         "tags": (note.tags if lang == "ko" else []) or out["tags"],
         "sources": note.sources,
@@ -509,6 +510,8 @@ def publish(min_age_hours: float = 0, limit: int | None = None) -> None:
                     slug=meta["slug"],
                     draft=bool(fm.get("draft", False)),
                     category=fm.get("category"),
+                    # project 필드가 생기기 전에 만든 초안은 메모에서 직접 가져온다
+                    project=fm.get("project") or str(inbox.parse(note_path).meta.get("project") or "").strip() or None,
                     hypothesis=fm.get("hypothesis"),
                     method=fm.get("method"),
                     result=fm.get("result"),
