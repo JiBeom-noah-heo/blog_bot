@@ -22,6 +22,7 @@ python main.py hold <메모이름>   # auto 발행에서 제외 (unhold로 해�
 - 글 생성·검증은 `claude --print --tools ""`(구독 인증, 도구 없음)로 한다. API 키를 쓰지 않는다.
 
 ## 파일
+- `README.md`: 승인 규칙, 파이썬 함수별 역할, 생성 파일(meta.json 필드·로그) 설명. 코드가 바뀌면 같이 고친다
 - `src/inbox.py`: 메모 파싱, 검증, `used` 표시
 - `src/leavelab.py`: 초안 생성, 품질 게이트, 사실 검증, 발행, auto/hold, 현황
 - `src/writer.py`: claude CLI 호출
