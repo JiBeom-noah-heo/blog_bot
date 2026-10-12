@@ -353,6 +353,8 @@ def fact_check_twice(note_text: str, fm: dict, body: str, label: str = "") -> li
 
 
 def auto() -> None:
+    """예약 실행. 초안을 만들고, 사용자가 approve한 초안 중 검토 시간이 지난 것만 발행한다
+    (2026-10-12 E4 브리프: 사람 검토 없이 발행한 글 0편)."""
     draft()
     publish(
         min_age_hours=float(os.getenv("LEAVE_LAB_REVIEW_HOURS", "24")),
@@ -423,6 +425,61 @@ def hold(name: str, on: bool = True) -> None:
     print(f"[LeaveLab] {name}: {'자동 발행 보류' if on else '보류 해제'}")
 
 
+def approve(name: str, on: bool = True) -> None:
+    """사용자 승인. 제목·메타 설명·카드·본문 수치를 직접 확인한 뒤 실행한다. 승인 뒤 초안 파일을 고치면 승인이 풀린다."""
+    meta_path = OUTPUT_DIR / name / "meta.json"
+    if not meta_path.exists():
+        raise SystemExit(f"초안 없음: {name}  (python main.py status 로 이름 확인)")
+    meta = _load_meta(meta_path)
+    if on:
+        if meta.get("stage") != "drafted":
+            raise SystemExit(f"{name}: 초안 상태가 아니라({meta.get('stage')}) 승인할 수 없다")
+        review(name)
+        meta["approved_at"] = datetime.now().isoformat(timespec="seconds")
+        meta.pop("hold", None)
+    else:
+        meta.pop("approved_at", None)
+    _save_meta(meta_path, meta)
+    print(f"[LeaveLab] {name}: {'승인 — 검토 시간이 지나면 다음 실행에서 발행' if on else '승인 취소'}")
+
+
+def _approval(workdir: Path, meta: dict) -> str | None:
+    """발행 가능하면 None, 아니면 이유. 승인 뒤에 초안 파일이 바뀌었으면 다시 승인해야 한다."""
+    at = meta.get("approved_at")
+    if not at:
+        return "승인 대기 (python main.py review/approve <초안>)"
+    approved = datetime.fromisoformat(at).timestamp()
+    changed = [f for f in meta.get("files", {}).values() if (workdir / f).stat().st_mtime > approved + 1]
+    if changed:
+        return f"승인 뒤 수정됨({', '.join(changed)}) — 다시 approve"
+    return None
+
+
+def review(name: str) -> None:
+    """승인 전에 볼 것을 한 화면에 모은다: 제목·메타 설명·카드·출처·숫자."""
+    workdir = OUTPUT_DIR / name
+    meta = _load_meta(workdir / "meta.json")
+    if not meta.get("files"):
+        raise SystemExit(f"초안 없음: {name}")
+    for lang, fname in meta["files"].items():
+        fm, body = _read_draft(workdir / fname)
+        print(f"==== {name}/{fname}")
+        print(f"제목({len(fm.get('title', ''))}자): {fm.get('title')}")
+        print(f"설명({len(fm.get('description', ''))}자): {fm.get('description')}")
+        print(f"분류: {fm.get('series')} · {fm.get('category')} · project={fm.get('project')} · verdict={fm.get('verdict')}")
+        print(f"태그: {', '.join(str(t) for t in fm.get('tags') or [])}")
+        for k in CARD_FIELDS:
+            if fm.get(k):
+                print(f"{k}: {fm[k]}")
+        for src in fm.get("sources") or []:
+            print(f"출처: {src.get('title')}  {src.get('url')}")
+        nums = sorted(set(re.findall(r"\d[\d,.]*(?:%|원|건|시간|분|초|개|편|일|h|만|억|배)", body)))
+        print(f"본문 {len(body)}자 · 숫자 표현 {len(nums)}개: {' / '.join(nums[:30])}")
+        print(f"파일: {workdir / fname}")
+    print("확인할 것: 제목·메타 설명이 본문과 맞나 / 숫자가 메모와 맞나 / 내가 직접 만든 숫자·화면·결정이 1개 이상 있나")
+    print("         / 상품명·브랜드·가족 정보가 없나. 고칠 게 있으면 파일을 고친 뒤 approve.")
+
+
 def _age_hours(meta: dict) -> float:
     at = meta.get("drafted_at")
     return (datetime.now() - datetime.fromisoformat(at)).total_seconds() / 3600 if at else 0.0
@@ -460,8 +517,12 @@ def publish(min_age_hours: float = 0, limit: int | None = None) -> None:
         meta = _load_meta(meta_path)
         if meta.get("stage") != "drafted":
             continue
-        if min_age_hours and meta.get("hold"):
+        if meta.get("hold"):
             print(f"[LeaveLab] 보류 중이라 건너뜀: {workdir.name}")
+            continue
+        why = _approval(workdir, meta)
+        if why:
+            print(f"[LeaveLab] {why}: {workdir.name}")
             continue
         # 예약 실행은 하루 한 번이라 실행 시각이 몇 초만 당겨져도 하루가 밀린다. 1시간 여유를 둔다.
         if min_age_hours and _age_hours(meta) + 1 < min_age_hours:
@@ -498,6 +559,11 @@ def publish(min_age_hours: float = 0, limit: int | None = None) -> None:
             _save_meta(meta_path, meta)
             print(f"[LeaveLab] 자동 수정함 ({meta['revisions']}/{MAX_REVISIONS}), 다시 검증: {workdir.name}")
         if blocked:
+            continue
+        if _approval(workdir, meta):
+            meta["last_error"] = "검증 지적대로 자동 수정함 — 고친 글을 review 하고 다시 approve"
+            _save_meta(meta_path, meta)
+            print(f"[LeaveLab] 자동 수정 뒤라 승인을 다시 받아야 함: {workdir.name}")
             continue
 
         # ko·th는 같은 날짜·slug로 발행해 파일명이 같게 유지한다
@@ -582,6 +648,7 @@ def status() -> None:
             extra = []
             if m.get("stage") == "drafted":
                 extra.append(f"{_age_hours(m):.1f}h 경과")
+                extra.append("승인됨" if not _approval(p.parent, m) else _approval(p.parent, m).split(" (")[0])
             if m.get("hold"):
                 extra.append("보류")
             if m.get("last_error"):
