@@ -20,7 +20,7 @@ _inbox 메모는 status: used, used_in: [글 경로]
 ```
 python main.py status              # 글감(raw 메모)·초안 현황. 초안마다 경과 시간, 승인 대기/승인됨, 보류, 오류
 python main.py draft               # raw 메모 → 초안 (발행 안 함)
-python main.py review <초안>       # 승인 전에 볼 것을 한 화면에: 제목·설명·분류·카드·출처·숫자 표현·파일 경로
+python main.py review [초안]       # 승인 전에 볼 것을 한 화면에: 제목·설명·분류·카드·출처·숫자 표현·파일 경로. 이름 없으면 승인 대기 초안 전부
 python main.py approve <초안>      # 사용자 승인 (review를 먼저 출력한다). unapprove로 취소
 python main.py publish             # 승인된 초안을 지금 바로 품질 게이트·사실 검증 뒤 발행 (검토 시간은 안 봄)
 python main.py auto                # draft + 승인되고 검토 시간 지난 초안 발행. 예약 실행용

@@ -455,8 +455,20 @@ def _approval(workdir: Path, meta: dict) -> str | None:
     return None
 
 
-def review(name: str) -> None:
-    """승인 전에 볼 것을 한 화면에 모은다: 제목·메타 설명·카드·출처·숫자."""
+def review(name: str | None = None) -> None:
+    """승인 전에 볼 것을 한 화면에 모은다: 제목·메타 설명·카드·출처·숫자. 이름이 없으면 승인 대기 초안 전부."""
+    if not name:
+        waiting = [d for d in sorted(OUTPUT_DIR.glob("*"), key=_queue_key) if (d / "meta.json").exists()
+                   and _load_meta(d / "meta.json").get("stage") == "drafted"
+                   and _approval(d, _load_meta(d / "meta.json"))]
+        if not waiting:
+            print("[LeaveLab] 승인 대기 초안 없음")
+            return
+        print(f"[LeaveLab] 승인 대기 {len(waiting)}편\n")
+        for d in waiting:
+            review(d.name)
+            print()
+        return
     workdir = OUTPUT_DIR / name
     meta = _load_meta(workdir / "meta.json")
     if not meta.get("files"):
