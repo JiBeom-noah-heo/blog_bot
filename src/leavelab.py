@@ -202,7 +202,8 @@ def _revise(note_text: str, out: dict, issues: list[str]) -> dict:
 
 def _parse_response(text: str) -> dict:
     def line(key):
-        m = re.search(rf"^{key}:\s*(.+)$", text, re.MULTILINE)
+        # 값이 비어 있으면 빈 문자열이어야 한다. \s*는 줄바꿈까지 먹어서 다음 줄의 표시어(METHOD: …)를 값으로 가져왔다.
+        m = re.search(rf"^{key}:[ \t]*(\S.*)$", text, re.MULTILINE)
         return m.group(1).strip() if m else ""
 
     content = re.search(r"^CONTENT:\s*\n(.*)", text, re.MULTILINE | re.DOTALL)
