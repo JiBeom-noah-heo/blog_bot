@@ -373,13 +373,13 @@ def _pending(repo: Path) -> list[tuple[str, float, Path]]:
 
 
 def _order(note: inbox.Note, pending) -> float | None:
-    """발행 순서. 원고 글감은 source.order, 대기 중인 원고 글감이 있는 프로젝트의 새 메모는 그 뒤."""
+    """발행 순서. 원고 글감(source 있음)만 source.order로 줄을 선다.
+    작업 세션 메모는 None: 같은 프로젝트에 원고 글감이 남아 있어도 기다리지 않고 바로 초안·발행한다
+    (2026-10-12 사용자 결정. 그때그때 생긴 기록이 원고 28편 뒤로 밀려 한 달 뒤에 나가는 것을 막는다)."""
     src = note.meta.get("source")
     if src:
         return float(src.get("order", 0))
-    project = str(note.meta.get("project", ""))
-    same = [o for proj, o, _ in pending if proj == project]
-    return max(same) + 0.01 if same else None
+    return None
 
 
 def _blocked_by(note: inbox.Note, pending) -> Path | None:
@@ -427,10 +427,10 @@ def _age_hours(meta: dict) -> float:
 
 
 def _queue_key(workdir: Path):
-    """작업 세션 메모가 먼저, 원고 글감은 원고 순서대로, 같으면 먼저 만든 초안부터."""
+    """작업 세션 메모가 먼저(메모 날짜순), 원고 글감은 원고 순서대로, 같으면 먼저 만든 초안부터."""
     m = _load_meta(workdir / "meta.json")
     order = m.get("backlog_order")
-    return (order is not None, order or 0, m.get("drafted_at") or "")
+    return (order is not None, order or 0, Path(m.get("note") or "").name, m.get("drafted_at") or "")
 
 
 def publish(min_age_hours: float = 0, limit: int | None = None) -> None:
