@@ -26,6 +26,8 @@ def main():
     }
     if command in ("hold", "unhold") and arg:
         leavelab.hold(arg, on=command == "hold")
+    elif command in ("approve", "unapprove") and arg == "all":
+        leavelab.approve_all(on=command == "approve")
     elif command in ("approve", "unapprove") and arg:
         leavelab.approve(arg, on=command == "approve")
     elif command == "review":
@@ -33,7 +35,7 @@ def main():
     elif command in actions:
         actions[command]()
     else:
-        print("사용법: python main.py [status|draft|publish|auto|review <초안>|approve <초안>|unapprove <초안>|hold <초안>|unhold <초안>]")
+        print("사용법: python main.py [status|draft|publish|auto|review <초안>|approve <초안|all>|unapprove <초안|all>|hold <초안>|unhold <초안>]")
         print()
         print("  status          - 글감(_inbox raw 메모)과 초안 현황")
         print("  draft           - 글감으로 초안 생성 (output/leavelab/, 발행 안 함)")
@@ -41,6 +43,7 @@ def main():
         print("  auto            - draft + 검토 시간(LEAVE_LAB_REVIEW_HOURS, 기본 24h) 지난 초안 발행. 예약 실행용")
         print("  review [초안]   - 승인 전에 볼 것(제목·설명·카드·출처·숫자)을 한 화면에. 이름 없으면 승인 대기 초안 전부")
         print("  approve <초안>  - 사용자 승인. 승인된 초안만 발행된다 / unapprove 로 취소. 승인 뒤 파일을 고치면 다시 approve")
+        print("  approve all     - 승인 대기 초안 전부 승인 (review 로 전부 읽은 뒤에만. hold 는 건너뜀) / unapprove all 로 미발행 승인 전부 취소")
         print("  hold <초안>     - 해당 초안을 auto 발행에서 제외 / unhold 로 해제")
         sys.exit(1)
 

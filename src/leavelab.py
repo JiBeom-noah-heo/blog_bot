@@ -443,6 +443,52 @@ def approve(name: str, on: bool = True) -> None:
     print(f"[LeaveLab] {name}: {'승인 — 검토 시간이 지나면 다음 실행에서 발행' if on else '승인 취소'}")
 
 
+def _drafted() -> list[tuple[Path, dict]]:
+    """초안 상태(drafted)인 작업 폴더와 meta를 발행 순서대로."""
+    out = []
+    for d in sorted(OUTPUT_DIR.glob("*"), key=_queue_key):
+        if (d / "meta.json").exists():
+            meta = _load_meta(d / "meta.json")
+            if meta.get("stage") == "drafted":
+                out.append((d, meta))
+    return out
+
+
+def approve_all(on: bool = True) -> None:
+    """승인 대기 초안(승인 안 됨·승인 뒤 수정됨)을 한 번에 승인한다. hold 초안은 건너뛴다.
+    `review`로 전부 읽은 뒤에만 쓴다. 게이트는 그대로다(검토 시간·품질 게이트·사실 검증 2회·하루 상한).
+    on=False 면 아직 발행되지 않은 승인을 모두 취소한다."""
+    drafted = _drafted()
+    if on:
+        targets = [(d, m) for d, m in drafted if not m.get("hold") and _approval(d, m)]
+        held = [d.name for d, m in drafted if m.get("hold")]
+    else:
+        targets = [(d, m) for d, m in drafted if m.get("approved_at")]
+        held = []
+    if not targets:
+        print("[LeaveLab] " + ("승인 대기 초안 없음" if on else "승인된 미발행 초안 없음"))
+        return
+    now = datetime.now().isoformat(timespec="seconds")
+    for d, meta in targets:
+        fm, _ = _read_draft(d / next(iter(meta["files"].values())))
+        if on:
+            meta["approved_at"] = now
+        else:
+            meta.pop("approved_at", None)
+        _save_meta(d / "meta.json", meta)
+        print(f"[LeaveLab] {'승인' if on else '승인 취소'}: {d.name}  · {fm.get('title')}")
+    for name in held:
+        print(f"[LeaveLab] hold 상태라 건너뜀: {name}  (unhold 뒤 approve)")
+    if on:
+        per_run = int(os.getenv("LEAVE_LAB_MAX_PUBLISH_PER_RUN", "1"))
+        total = sum(1 for d, m in _drafted() if not _approval(d, m))
+        days = (total + per_run - 1) // per_run
+        print(f"[LeaveLab] {len(targets)}편 승인. 승인된 미발행 초안 {total}편 → 하루 {per_run}편씩 약 {days}일에 걸쳐 발행. "
+              f"빼려면 unapprove <초안>, 전부 되돌리려면 unapprove all")
+    else:
+        print(f"[LeaveLab] {len(targets)}편 승인 취소")
+
+
 def _approval(workdir: Path, meta: dict) -> str | None:
     """발행 가능하면 None, 아니면 이유. 승인 뒤에 초안 파일이 바뀌었으면 다시 승인해야 한다."""
     at = meta.get("approved_at")
@@ -458,9 +504,7 @@ def _approval(workdir: Path, meta: dict) -> str | None:
 def review(name: str | None = None) -> None:
     """승인 전에 볼 것을 한 화면에 모은다: 제목·메타 설명·카드·출처·숫자. 이름이 없으면 승인 대기 초안 전부."""
     if not name:
-        waiting = [d for d in sorted(OUTPUT_DIR.glob("*"), key=_queue_key) if (d / "meta.json").exists()
-                   and _load_meta(d / "meta.json").get("stage") == "drafted"
-                   and _approval(d, _load_meta(d / "meta.json"))]
+        waiting = [d for d, m in _drafted() if _approval(d, m)]
         if not waiting:
             print("[LeaveLab] 승인 대기 초안 없음")
             return

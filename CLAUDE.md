@@ -10,6 +10,7 @@ python main.py publish         # 초안을 지금 바로 품질 게이트 → �
 python main.py auto            # draft + 검토 시간 지난 초안만 publish (예약 실행용)
 python main.py review <메모이름> # 승인 전에 볼 것(제목·설명·카드·출처·숫자)을 한 화면에
 python main.py approve <메모이름># 사용자 승인. 승인된 초안만 발행된다 (unapprove로 취소)
+python main.py approve all       # 승인 대기 전부 승인. review로 전부 읽은 뒤에만 (unapprove all로 전부 취소)
 python main.py hold <메모이름>   # auto 발행에서 제외 (unhold로 해제)
 ```
 - 예약 실행: Windows 작업 스케줄러 `leave-lab blog_bot`이 매일 09:00에 `run_auto.cmd`를 돌린다(로그인 상태에서만 실행). 메모 → 그날 초안 → 사용자 `approve` → 다음 실행에서 발행. 로그는 `output/logs/YYYY-MM-DD.log`.

@@ -22,6 +22,7 @@ python main.py status              # 글감(raw 메모)·초안 현황. 초안�
 python main.py draft               # raw 메모 → 초안 (발행 안 함)
 python main.py review [초안]       # 승인 전에 볼 것을 한 화면에: 제목·설명·분류·카드·출처·숫자 표현·파일 경로. 이름 없으면 승인 대기 초안 전부
 python main.py approve <초안>      # 사용자 승인 (review를 먼저 출력한다). unapprove로 취소
+python main.py approve all         # 승인 대기 초안 전부 승인 (review로 전부 읽은 뒤에만). unapprove all로 미발행 승인 전부 취소
 python main.py publish             # 승인된 초안을 지금 바로 품질 게이트·사실 검증 뒤 발행 (검토 시간은 안 봄)
 python main.py auto                # draft + 승인되고 검토 시간 지난 초안 발행. 예약 실행용
 python main.py hold <초안>         # 발행에서 제외. unhold로 해제
@@ -43,6 +44,7 @@ python main.py hold <초안>         # 발행에서 제외. unhold로 해제
 | 사실 검증 중 봇이 자동 수정하면, 같은 실행에서 바로 발행하지 않고 "고친 글을 review 하고 다시 approve"로 멈춘다. 사람이 최종 문장을 본다 | `publish()`의 수정 루프 뒤 `_approval()` 재확인 |
 | 승인 대기 초안에는 사실 검증(claude 호출)을 돌리지 않는다. 승인·검토 시간·순서 확인을 모두 통과한 뒤에만 검증한다 | `publish()`의 확인 순서 |
 | `unapprove <초안>`은 `approved_at`을 지운다. 발행 전 언제든 가능하다 | `approve(on=False)` |
+| `approve all`은 승인 대기(승인 안 됨·승인 뒤 수정됨) 초안을 한 번에 승인한다. `hold` 초안은 건너뛴다. 승인 뒤의 게이트(검토 시간·품질 게이트·사실 검증 2회·하루 상한)는 그대로다. `unapprove all`은 미발행 승인을 전부 지운다 | `approve_all()` |
 | 검토 시간은 `drafted_at` 기준 24시간(`LEAVE_LAB_REVIEW_HOURS`)이다. 승인 시각과 무관하다. 예약 실행 시각 오차를 위해 1시간 여유를 둔다 | `_age_hours()`, `publish()` |
 | 하루 발행 편수 상한은 `LEAVE_LAB_MAX_PUBLISH_PER_RUN`(기본 1, 현재 2). 승인된 초안이 더 많으면 다음 실행으로 넘긴다 | `publish(limit=…)` |
 
@@ -119,6 +121,8 @@ python main.py hold <초안>         # 발행에서 제외. unhold로 해제
 | `_queue_key(workdir)` | 발행 큐 정렬: 세션 메모 먼저(최근 메모부터), 그 뒤 원고 순서, 같으면 먼저 만든 초안 |
 | `_age_hours(meta)` | `drafted_at`부터 지난 시간 |
 | `approve(name, on)` | 승인(`approved_at` 기록, `review` 선출력, hold 해제) 또는 취소 |
+| `approve_all(on)` | 승인 대기 초안 전부 승인(hold 건너뜀) 또는 미발행 승인 전부 취소. 끝에 승인된 초안 수와 예상 발행 일수를 출력 |
+| `_drafted()` | `drafted` 상태 초안을 발행 순서(`_queue_key`)대로 (폴더, meta) 목록으로 |
 | `_approval(workdir, meta)` | 발행 가능하면 `None`, 아니면 이유("승인 대기", "승인 뒤 수정됨") |
 | `review(name)` | 승인 전 확인 화면 출력 |
 | `hold(name, on)` | `meta.hold` 켜기/끄기 |
