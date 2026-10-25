@@ -26,6 +26,9 @@ python main.py approve all         # 승인 대기 초안 전부 승인 (review�
 python main.py publish             # 승인된 초안을 지금 바로 품질 게이트·사실 검증 뒤 발행 (검토 시간은 안 봄)
 python main.py auto                # draft + 승인되고 검토 시간 지난 초안 발행. 예약 실행용
 python main.py hold <초안>         # 발행에서 제외. unhold로 해제
+python main.py threads             # 아직 안 올린 쓰레드 3줄 초안(output/threads/)을 본문째 출력. 복사해 올린다
+python main.py threads backfill [N] # 최근 N일(기본 3) 발행 글의 쓰레드 초안 만들기(있는 것은 안 건드림)
+python main.py threads posted <이름> # 올렸다고 표시 (status: posted)
 ```
 
 `<초안>`은 `output/leavelab/` 아래 폴더 이름 = 메모 파일 이름(확장자 제외). `status`에 그대로 나온다.
@@ -137,6 +140,15 @@ python main.py hold <초안>         # 발행에서 제외. unhold로 해제
 | `_static_site(repo)` | leave-lab 저장소의 `blog_bot/publishers/static_site.py`를 모듈로 읽어 온다(발행 규칙의 단일 진실) |
 | `_load_meta` / `_save_meta` | `meta.json` 읽기·쓰기 |
 
+### `src/threads.py` — 쓰레드 초안
+| 함수 | 역할 |
+|---|---|
+| `compose(fm, url)` | frontmatter에서 3단락 본문을 만든다. 새 문장을 만들지 않는다 |
+| `write(fm, published_path, force=False)` | `output/threads/<발행일>-<slug>.md`에 쓴다. 이미 있으면 `None` |
+| `pending()` | `status: pending`인 초안 목록(최근 글 먼저) |
+| `mark_posted(name)` | `status: posted`, `posted_at` 기록 |
+`leavelab.publish()`가 ko 발행 직후 `write()`를 부른다. 실패해도 발행은 끝난 것이라 로그만 남긴다. `leavelab.threads_cmd()`가 `threads` 명령을 처리한다.
+
 ### `C:\leave-lab\blog_bot\publishers\static_site.py` — 발행 어댑터 (leave-lab 저장소에 있음)
 | 이름 | 역할 |
 |---|---|
@@ -184,6 +196,11 @@ python main.py hold <초안>         # 발행에서 제외. unhold로 해제
 | `revisions` | 사실 검증 지적으로 자동 수정한 횟수(최대 2) |
 | `last_error` | 마지막 실패 이유. 발행 성공 시 지워진다 |
 | `published` | 언어별 발행된 글 경로(leave-lab 저장소 기준). ko·th 중 하나만 성공했을 때 이어서 발행하기 위해 남긴다 |
+
+### `output/threads/<발행일>-<slug>.md` (git 제외)
+쓰레드(Threads) 유입 실험(2026-10-21～11-04)용. ko 글이 발행될 때 `src/threads.py`가 자동으로 하나 쓴다. 자동 게시는 하지 않고 사용자가 복사해 올린다.
+본문은 이미 사실 검증을 통과한 frontmatter만 조합한 3단락이다: `hypothesis`(없으면 제목) → `result`(검증일지는 `판정 <verdict>.` 앞에) → 글 링크 + `?utm_source=threads&utm_medium=social`. 500자를 넘으면 결과 줄을 자른다.
+frontmatter: `post`(발행 글 경로), `url`, `created`, `status`(`pending` → `threads posted <이름>`으로 `posted`), `posted_at`. 파일이 이미 있으면 다시 쓰지 않는다(직접 고친 문장을 지키기 위해). 환경변수 `LEAVE_LAB_SITE_URL`(기본 https://leave-lab.com).
 
 ### `output/logs/YYYY-MM-DD.log` (git 제외)
 `run_auto.cmd`의 실행 로그. 실행마다 `==== 날짜 시간` 구분선 뒤에 `[LeaveLab] …` 줄이 쌓인다. 볼 것: `승인 대기`, `검토 시간 대기`, `발행 보류`(지적 목록), `자동 수정함`, `승인을 다시 받아야 함`, `발행 완료`, `오늘 발행 상한`.

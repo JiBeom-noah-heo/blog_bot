@@ -32,10 +32,12 @@ def main():
         leavelab.approve(arg, on=command == "approve")
     elif command == "review":
         leavelab.review(arg)
+    elif command == "threads":
+        leavelab.threads_cmd(arg, sys.argv[3] if len(sys.argv) > 3 else None)
     elif command in actions:
         actions[command]()
     else:
-        print("사용법: python main.py [status|draft|publish|auto|review <초안>|approve <초안|all>|unapprove <초안|all>|hold <초안>|unhold <초안>]")
+        print("사용법: python main.py [status|draft|publish|auto|review <초안>|approve <초안|all>|unapprove <초안|all>|hold <초안>|unhold <초안>|threads [backfill [N]|posted <이름>]]")
         print()
         print("  status          - 글감(_inbox raw 메모)과 초안 현황")
         print("  draft           - 글감으로 초안 생성 (output/leavelab/, 발행 안 함)")
@@ -45,6 +47,8 @@ def main():
         print("  approve <초안>  - 사용자 승인. 승인된 초안만 발행된다 / unapprove 로 취소. 승인 뒤 파일을 고치면 다시 approve")
         print("  approve all     - 승인 대기 초안 전부 승인 (review 로 전부 읽은 뒤에만. hold 는 건너뜀) / unapprove all 로 미발행 승인 전부 취소")
         print("  hold <초안>     - 해당 초안을 auto 발행에서 제외 / unhold 로 해제")
+        print("  threads         - 아직 안 올린 쓰레드 3줄 초안(output/threads/) 보기. 발행 때 자동 생성, 자동 게시는 안 함")
+        print("  threads backfill [N] - 최근 N일(기본 3) 발행 글의 쓰레드 초안 만들기 / threads posted <이름> 으로 올림 표시")
         sys.exit(1)
 
 

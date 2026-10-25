@@ -6,6 +6,7 @@
   auto()     draft() 후, 만든 지 LEAVE_LAB_REVIEW_HOURS(기본 24)시간 지난 초안만 publish(). 예약 실행용.
   hold()     초안을 자동 발행에서 빼거나(on) 되돌린다(off).
   status()   글감·초안 현황 출력.
+  threads_cmd() 발행 글의 쓰레드 3줄 초안(output/threads/) 보기·만들기·올림 표시. 자동 게시 아님.
 
 발행은 leave-lab 저장소의 blog_bot/publishers/static_site.py 를 그대로 쓴다(단일 진실).
 환경변수: LEAVE_LAB_REPO (필수), LEAVE_LAB_BRANCH, LEAVE_LAB_NO_PUSH, LEAVE_LAB_REVIEW_HOURS
@@ -17,12 +18,12 @@ import json
 import os
 import re
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import yaml
 
-from . import inbox
+from . import inbox, threads
 from .writer import call_claude
 
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -652,6 +653,13 @@ def publish(min_age_hours: float = 0, limit: int | None = None) -> None:
                 published[lang] = path.relative_to(repo).as_posix()
                 _save_meta(meta_path, meta)
                 print(f"[LeaveLab] 발행 완료 ({lang}): {published[lang]}")
+                if lang == "ko":
+                    try:
+                        tp = threads.write(fm, published[lang])
+                        if tp:
+                            print(f"[LeaveLab] 쓰레드 초안: {tp.relative_to(PROJECT_ROOT).as_posix()}  (복사해 올린 뒤 threads posted {tp.stem})")
+                    except Exception as e:  # 발행은 끝났다. 초안은 threads backfill 로 다시 만들 수 있다
+                        print(f"[LeaveLab] 쓰레드 초안 실패(발행은 완료): {e}")
         except Exception as e:
             meta["last_error"] = str(e)
             _save_meta(meta_path, meta)
@@ -710,6 +718,48 @@ def status() -> None:
             if m.get("last_error"):
                 extra.append(f"오류: {m['last_error']}")
             print(f"  - {p.parent.name}  {m.get('stage')}  {' · '.join(extra)}".rstrip())
+
+
+# ---------- 쓰레드 초안 ----------
+
+def threads_cmd(sub: str | None = None, arg: str | None = None) -> None:
+    """threads            올리지 않은 쓰레드 초안을 본문째 보여 준다
+       threads backfill [N]  최근 N일(기본 3) 안에 발행된 글의 초안을 만든다(있는 것은 건드리지 않음)
+       threads posted <이름> 올렸다고 표시한다"""
+    if sub == "posted":
+        if not arg:
+            raise SystemExit("사용법: threads posted <이름>")
+        p = threads.mark_posted(arg)
+        print(f"[LeaveLab] 올림 표시: {p.name}")
+        return
+    if sub == "backfill":
+        days = int(arg) if arg else 3
+        cutoff = (date.today() - timedelta(days=days)).isoformat()
+        made = skipped = 0
+        for p in sorted(OUTPUT_DIR.glob("*/meta.json")):
+            meta = _load_meta(p)
+            ko = (meta.get("published") or {}).get("ko")
+            if meta.get("stage") != "published" or not ko:
+                continue
+            if Path(ko).stem[:10] < cutoff:
+                continue
+            fm, _ = _read_draft(p.parent / meta["files"]["ko"])
+            out = threads.write(fm, ko)
+            if out:
+                made += 1
+                print(f"[LeaveLab] 쓰레드 초안: {out.name}")
+            else:
+                skipped += 1
+        print(f"[LeaveLab] 최근 {days}일 발행 글 → 초안 {made}개 생성, {skipped}개는 이미 있음")
+        return
+    items = threads.pending()
+    if not items:
+        print("[LeaveLab] 올릴 쓰레드 초안 없음")
+        return
+    print(f"[LeaveLab] 올릴 쓰레드 초안 {len(items)}개 (올린 뒤: threads posted <이름>)")
+    for p, head, body in items:
+        print(f"\n==== {p.stem}  ({len(body)}자)")
+        print(body)
 
 
 def _load_meta(path: Path) -> dict:

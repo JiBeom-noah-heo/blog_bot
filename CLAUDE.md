@@ -12,6 +12,7 @@ python main.py review <메모이름> # 승인 전에 볼 것(제목·설명·카
 python main.py approve <메모이름># 사용자 승인. 승인된 초안만 발행된다 (unapprove로 취소)
 python main.py approve all       # 승인 대기 전부 승인. review로 전부 읽은 뒤에만 (unapprove all로 전부 취소)
 python main.py hold <메모이름>   # auto 발행에서 제외 (unhold로 해제)
+python main.py threads           # 안 올린 쓰레드 3줄 초안 보기 (backfill [N]: 최근 N일 글 초안 만들기 / posted <이름>: 올림 표시)
 ```
 - 예약 실행: Windows 작업 스케줄러 `leave-lab blog_bot`이 매일 09:00에 `run_auto.cmd`를 돌린다(로그인 상태에서만 실행). 메모 → 그날 초안 → 사용자 `approve` → 다음 실행에서 발행. 로그는 `output/logs/YYYY-MM-DD.log`.
 - **사람 검토 게이트(2026-10-12부터, E4 브리프 `C:\leave-lab\docs\E04_블로그계산기허브_blog_bot.md`)**: 봇은 초안만 만든다. 사용자가 `review`로 제목·메타 설명·카드·출처·숫자를 보고, 글에 직접 만든 숫자·화면·결정이 1개 이상 있는지 확인한 뒤 `approve`한 초안만 발행된다. 승인 뒤 초안 파일이 바뀌면(직접 수정, 봇의 자동 수정 포함) 승인이 풀려 다시 approve해야 한다. `publish`도 승인된 초안만 낸다. 사람 검토 없이 발행한 글 0편이 지표다.
@@ -20,6 +21,7 @@ python main.py hold <메모이름>   # auto 발행에서 제외 (unhold로 해�
 - 검토 시간을 0으로 줄이거나 사실 검증을 빼거나 승인 게이트를 우회하지 않는다(구글 대량 생성 콘텐츠 정책 리스크). 바꾸려면 사용자에게 먼저 묻는다. 광고 배치·광고 수익을 위한 작업은 하지 않는다(브리프).
 - 발행은 leave-lab 저장소의 `blog_bot/publishers/static_site.py`를 불러 쓴다. 발행 규칙은 거기서만 고친다.
 - 글 frontmatter에 `category`(홈 탭 분류, 태그 낱말표로 추정)와 실험 카드 `hypothesis`·`method`·`result`(생성 응답의 HYPOTHESIS/METHOD/RESULT 한 줄씩)를 넣는다. 카드 문장도 사실 검증 대상이다. 없으면 비워 두며 사이트는 그대로 빌드된다. 메모의 `project`는 글 frontmatter `project`로 그대로 넘기고, 사이트의 `src/series.ts`가 이를 연재(시리즈) 이름으로 묶는다. 새 프로젝트를 시작하면 그 파일에 한 줄 추가해야 연재로 보인다.
+- **쓰레드(Threads) 유입 실험(2026-10-21～11-04, 사용자 결정)**: ko 글이 발행되면 `src/threads.py`가 `output/threads/<발행일>-<slug>.md`에 3단락(질문 → 핵심 숫자·판정 → `?utm_source=threads` 링크)을 써 둔다. 자동 게시하지 않는다. 사용자가 `threads`로 보고 복사해 올린 뒤 `threads posted <이름>`으로 표시한다. 본문은 검증 통과한 frontmatter만 조합하며 새 문장을 만들지 않는다. 11/4 판정 전에는 Threads API 게시를 붙이지 않는다.
 - 글 생성·검증은 `claude --print --tools ""`(구독 인증, 도구 없음)로 한다. API 키를 쓰지 않는다.
 
 ## 파일
@@ -27,8 +29,9 @@ python main.py hold <메모이름>   # auto 발행에서 제외 (unhold로 해�
 - `src/inbox.py`: 메모 파싱, 검증, `used` 표시
 - `src/leavelab.py`: 초안 생성, 품질 게이트, 사실 검증, 발행, auto/hold, 현황
 - `src/writer.py`: claude CLI 호출
+- `src/threads.py`: 쓰레드 초안 만들기·목록·올림 표시 (`output/threads/`)
 - `config/leavelab_style.md`, `prompts/leavelab_{ko,th,review}.md`: 문체·형식, 생성·검증 프롬프트
 - `output/`: git에서 제외. `meta.json`의 stage(drafted/published), drafted_at, approved_at, hold로 상태를 이어간다
 
 ## 환경변수 (.env)
-`LEAVE_LAB_REPO`(필수, `C:\leave-lab`), `LEAVE_LAB_BRANCH`(기본 main), `LEAVE_LAB_REVIEW_HOURS`(기본 24), `LEAVE_LAB_NO_PUSH=1`(커밋까지만), `CLAUDE_CMD`(선택)
+`LEAVE_LAB_REPO`(필수, `C:\leave-lab`), `LEAVE_LAB_BRANCH`(기본 main), `LEAVE_LAB_REVIEW_HOURS`(기본 24), `LEAVE_LAB_NO_PUSH=1`(커밋까지만), `LEAVE_LAB_SITE_URL`(기본 https://leave-lab.com, 쓰레드 링크용), `CLAUDE_CMD`(선택)
